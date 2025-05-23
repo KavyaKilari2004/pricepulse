@@ -1,59 +1,115 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Price Pulse</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f5f5f5;
-            margin: 50px;
-            text-align: center;
-        }
+  <meta charset="UTF-8">
+  <title>Price Pulse - Track & View</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      text-align: center;
+      padding: 40px;
+    }
 
-        h2 {
-            color: #333;
-        }
+    h2 {
+      color: #333;
+    }
 
-        form {
-            background-color: #fff;
-            padding: 20px;
-            display: inline-block;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
-        }
+    .card {
+      background-color: #fff;
+      padding: 20px;
+      margin: 20px auto;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      width: 400px;
+    }
 
-        input[type="text"] {
-            padding: 10px;
-            width: 300px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
+    input[type="text"] {
+      width: 90%;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
 
-        button {
-            padding: 10px 15px;
-            margin-left: 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
+    button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
 
-        button:hover {
-            background-color: #45a049;
-        }
-    </style>
+    button:hover {
+      background-color: #45a049;
+    }
+
+    ul {
+      text-align: left;
+    }
+
+    .result {
+      margin-top: 10px;
+      text-align: left;
+      background: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 1px 1px 5px #ddd;
+    }
+  </style>
 </head>
 <body>
 
-    <h2>Price Pulse</h2>
+  <h2>Price Pulse</h2>
 
+  <div class="card">
+    <h3>1. Track New Product</h3>
     <form action="/submit-url" method="POST">
-        <label for="product_url">Enter Product URL:</label><br><br>
-        <input type="text" id="product_url" name="product_url" placeholder="https://www.amazon.in/..." required>
-        <button type="submit">Track Price</button>
+      <input type="text" name="product_url" placeholder="https://www.amazon.in/..." required>
+      <br>
+      <button type="submit">Track Price</button>
     </form>
+  </div>
+
+  <div class="card">
+    <h3>2. View Price History</h3>
+    <input type="text" id="productTitle" placeholder="Enter product title">
+    <button onclick="trackPrice()">Show History</button>
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    async function trackPrice() {
+      const title = document.getElementById("productTitle").value.trim();
+      if (!title) {
+        alert("Please enter a product title.");
+        return;
+      }
+
+      const url = `/api/price-history?title=${encodeURIComponent(title)}`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const resultDiv = document.getElementById("result");
+
+        if (res.status !== 200) {
+          resultDiv.innerHTML = `<p style="color:red;">${data.message || "Error occurred"}</p>`;
+          return;
+        }
+
+        let html = "<ul>";
+        data.forEach(entry => {
+          html += `<li><strong>₹${entry.price}</strong> on ${entry.timestamp}</li>`;
+        });
+        html += "</ul>";
+        resultDiv.innerHTML = html;
+      } catch (err) {
+        document.getElementById("result").innerHTML = "<p style='color:red;'>Failed to fetch data</p>";
+      }
+    }
+  </script>
 
 </body>
 </html>
