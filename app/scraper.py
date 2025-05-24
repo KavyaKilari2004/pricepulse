@@ -1,42 +1,29 @@
-from playwright.sync_api import sync_playwright
-
-def scrape_amazon_product(url):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-
-        try:
-            print(f"[INFO] Visiting: {url}")
-            page.goto(url, timeout=15000)
-
-        
-            page.wait_for_selector('span#productTitle', timeout=5000)
-
-        
-            name = page.locator('span#productTitle').first.inner_text().strip()
-            price = "N/A"
-            price_candidates = page.locator(".a-price .a-offscreen").all_inner_texts()
-            for p in price_candidates:
-                if "₹" in p:
-                    price = p.strip()
-                    break
-
-            print(f"[RESULT] Name: {name}")
-            print(f"[RESULT] Price: {price}")
-
-        except Exception as e:
-            print(f"[ERROR] {e}")
-        finally:
-            browser.close()
-product_url = "https://www.amazon.in/BSB-Cotton-Flower-Printed-Bedsheets/dp/B08YJT6FMN?ref_=Oct_d_oup_d_1380448031_1&pd_rd_w=AA1ih&content-id=amzn1.sym.8f511bca-047d-43c0-a1e2-d03b2812a527&pf_rd_p=8f511bca-047d-43c0-a1e2-d03b2812a527&pf_rd_r=R1BS7CXKBXVJZTDRK59N&pd_rd_wg=4Nc3u&pd_rd_r=1e68f614-7947-423d-a2eb-22f686419076&pd_rd_i=B08YJT6FMN&th=1"
-scrape_amazon_product(product_url)
-
-
-
---Handle edge cases (redirects, blocked requests, unavailable pages).
---Run it locally for 1-2 product links. 
+import sqlite3
+from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError
-import time
+
+def init_db():
+    conn = sqlite3.connect("price_data.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_title TEXT,
+            price REAL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            url TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_to_db(product_title, price, url):
+    conn = sqlite3.connect("price_data.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO prices (product_title, price, url) VALUES (?, ?, ?)", (product_title, price, url))
+    conn.commit()
+    conn.close()
+    print(f"[DB] Saved: {product_title} - ₹{price} at {datetime.now()}")
 
 def scrape_amazon_product(url):
     with sync_playwright() as p:
@@ -48,45 +35,37 @@ def scrape_amazon_product(url):
         page = context.new_page()
 
         try:
-            print(f"\n[INFO] Visiting: {url}")
-            page.goto(url, timeout=20000)
+            print(f"[INFO] Visiting: {url}")
+            page.goto(url, timeout=15000)
 
-            # Check for captcha
-            if "captcha" in page.url or "sorry" in page.url:
-                print("[WARNING] Blocked by captcha or Amazon bot protection.")
+            if "captcha" in page.url:
+                print("[BLOCKED] Captcha encountered.")
                 return
 
-            # Wait for product title
-            page.wait_for_selector('span#productTitle', timeout=7000)
+            page.wait_for_selector("#productTitle", timeout=10000)
+            product_title = page.locator("#productTitle").first.inner_text().strip()
 
-            # Get title
-            name = page.locator('span#productTitle').first.inner_text().strip()
-
-            # Try all visible price elements
-            price = "N/A"
-            price_candidates = page.locator(".a-price .a-offscreen").all_inner_texts()
-            for p in price_candidates:
+            price_spans = page.locator(".a-price .a-offscreen").all_inner_texts()
+            price = None
+            for p in price_spans:
                 if "₹" in p:
-                    price = p.strip()
+                    price = float(p.replace("₹", "").replace(",", "").strip())
                     break
 
-            print(f"[RESULT] Name: {name}")
-            print(f"[RESULT] Price: {price}")
+            if product_title and price:
+                save_to_db(product_title, price, url)
+            else:
+                print("[ERROR] Couldn't extract price/title.")
 
         except TimeoutError:
-            print("[ERROR] Page took too long to load or product unavailable.")
+            print("[TIMEOUT] Page load failed.")
         except Exception as e:
-            print(f"[ERROR] {e}")
+            print(f"[ERROR] Scraping failed: {e}")
         finally:
             browser.close()
 
-product_urls = [
-    "https://www.amazon.in/Titan-Analog-Brown-Womens-Watch-2656WL01/dp/B09B9QZH8N/ref=sr_1_7?dib=eyJ2IjoiMSJ9.uXLht9jiqx8MI2bzJqy0i59z35ZHTET80AVqJ31bupKbwHj2AJAEyyHudhfk5nHeyEV6AOv2yQt0VKNrb0umLF1qoEtSP61TOGrR9bXaPAbVk4TLtKXK5Z69K-Vr1_x9Hly79OhU7qx4c7lVfVWsb4DfBIK-cHoWQ0EKX-U9RYsS53eE0QHUW6FR1Br29Uqxt1K8yhUB2-J-QvezhhaP6YGn8qw06_95wn5PCVfdHX-ukG16jrPjTeCyaqsXqjV3q4sUz6LlWDMK9-JDhBwvLyccqK5dAzbl_RK4mSxrskA.X3QvobivK6PW2JzO6iqUnP5pvwrOBHhCjiERfScSWWw&dib_tag=se&pf_rd_i=2563505031&pf_rd_m=A1VBAL9TL5WCBF&pf_rd_s=merchandised-search-16&qid=1747921399&refinements=p_n_feature_fourteen_browse-bin%3A11142592031%2Cp_89%3ATitan&rnid=3837712031&s=watches&sr=1-7",
-    "https://www.amazon.in/Titan-Raga-Analog-Womens-Watch-2642WM01/dp/B08HCLZPTG/ref=sr_1_3?dib=eyJ2IjoiMSJ9.uXLht9jiqx8MI2bzJqy0i59z35ZHTET80AVqJ31bupKbwHj2AJAEyyHudhfk5nHeyEV6AOv2yQt0VKNrb0umLF1qoEtSP61TOGrR9bXaPAbVk4TLtKXK5Z69K-Vr1_x9Hly79OhU7qx4c7lVfVWsb4DfBIK-cHoWQ0EKX-U9RYsS53eE0QHUW6FR1Br29Uqxt1K8yhUB2-J-QvezhhaP6YGn8qw06_95wn5PCVfdHX-ukG16jrPjTeCyaqsXqjV3q4sUz6LlWDMK9-JDhBwvLyccqK5dAzbl_RK4mSxrskA.X3QvobivK6PW2JzO6iqUnP5pvwrOBHhCjiERfScSWWw&dib_tag=se&pf_rd_i=2563505031&pf_rd_m=A1VBAL9TL5WCBF&pf_rd_s=merchandised-search-16&qid=1747921399&refinements=p_n_feature_fourteen_browse-bin%3A11142592031%2Cp_89%3ATitan&rnid=3837712031&s=watches&sr=1-3&th=1"  # Change to any valid Amazon product
-]
-
-for url in product_urls:
-    scrape_amazon_product(url)
-    time.sleep(2)  
+if __name__ == "__main__":
+    init_db()
     
-
+    product_url = "https://www.amazon.in/BSB-Cotton-Flower-Printed-Bedsheets/dp/B08YJT6FMN/ref=pd_bxgy_thbs_d_sccl_2/262-8216538-9800939?pd_rd_w=LgHPG&content-id=amzn1.sym.d1afc5d3-2e83-45f5-8382-2dc0d946ef8f&pf_rd_p=d1afc5d3-2e83-45f5-8382-2dc0d946ef8f&pf_rd_r=MTPVY547H4647F4H0K3Z&pd_rd_wg=FIooO&pd_rd_r=f3afc6d3-f5ac-4146-b2de-d836c0f04d3b&pd_rd_i=B08YJT6FMN&th=1"
+    scrape_amazon_product(product_url)
