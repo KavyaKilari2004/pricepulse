@@ -1,112 +1,145 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Price Pulse - Track & View</title>
+  <meta charset="UTF-8" />
+  <title>PricePulse - Track Amazon Prices</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f5f5;
-      text-align: center;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f7f9;
       padding: 40px;
-    }
-
-    h2 {
       color: #333;
     }
 
-    .card {
-      background-color: #fff;
-      padding: 20px;
-      margin: 20px auto;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      width: 400px;
+    h2 {
+      margin-bottom: 20px;
+    }
+
+    .input-box {
+      display: flex;
+      flex-direction: column;
+      width: 500px;
+      margin-bottom: 30px;
     }
 
     input[type="text"] {
-      width: 90%;
-      padding: 10px;
-      margin: 10px 0;
+      padding: 12px;
+      font-size: 16px;
       border: 1px solid #ccc;
-      border-radius: 4px;
+      border-radius: 6px;
     }
 
     button {
-      padding: 10px 15px;
-      background-color: #4CAF50;
+      margin-top: 10px;
+      padding: 12px;
+      background-color: #007BFF;
       color: white;
+      font-size: 16px;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
     }
 
     button:hover {
-      background-color: #45a049;
+      background-color: #0056b3;
     }
 
-    ul {
-      text-align: left;
+    #preview {
+      margin-top: 20px;
+      padding: 20px;
+      background-color: #fff;
+      border-left: 4px solid #007BFF;
+      width: 500px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
 
-    .result {
-      margin-top: 10px;
-      text-align: left;
-      background: #fff;
-      padding: 10px;
-      border-radius: 5px;
-      box-shadow: 1px 1px 5px #ddd;
+    #chartContainer {
+      margin-top: 40px;
+      max-width: 800px;
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 5px 10px rgba(0,0,0,0.1);
     }
   </style>
 </head>
 <body>
 
-  <h2>Price Pulse</h2>
+  <h2>🔗 Track Amazon Product Price (via URL)</h2>
 
-  <div class="card">
-    <h3>1. Track New Product</h3>
-    <form action="/submit-url" method="POST">
-      <input type="text" name="product_url" placeholder="https://www.amazon.in/..." required>
-      <br>
-      <button type="submit">Track Price</button>
-    </form>
+  <div class="input-box">
+    <input type="text" id="productURL" placeholder="Paste full Amazon product URL here">
+    <button onclick="trackPrice()">Track Price</button>
   </div>
 
-  <div class="card">
-    <h3>2. View Price History</h3>
-    <input type="text" id="productTitle" placeholder="Enter product title">
-    <button onclick="trackPrice()">Show History</button>
-    <div class="result" id="result"></div>
+  <div id="preview"></div>
+
+  <div id="chartContainer">
+    <canvas id="priceChart"></canvas>
   </div>
 
   <script>
+    let chart = null;
+
     async function trackPrice() {
-      const title = document.getElementById("productTitle").value.trim();
-      if (!title) {
-        alert("Please enter a product title.");
+      const url = document.getElementById("productURL").value;
+      const preview = document.getElementById("preview");
+
+      if (!url) {
+        preview.innerHTML = "<p style='color:red;'>Please paste a valid Amazon URL.</p>";
         return;
       }
 
-      const url = `/api/price-history?title=${encodeURIComponent(title)}`;
+      const encodedURL = encodeURIComponent(url);
+      const apiURL = `/api/price-history?url=${encodedURL}`;
+
       try {
-        const res = await fetch(url);
+        const res = await fetch(apiURL);
         const data = await res.json();
 
-        const resultDiv = document.getElementById("result");
-
-        if (res.status !== 200) {
-          resultDiv.innerHTML = `<p style="color:red;">${data.message || "Error occurred"}</p>`;
+        if (res.status !== 200 || !Array.isArray(data) || data.length === 0 || data.message) {
+          preview.innerHTML = `<p style='color:red;'>No data found for this URL.</p>`;
+          if (chart) chart.destroy();
           return;
         }
 
-        let html = "<ul>";
-        data.forEach(entry => {
-          html += `<li><strong>₹${entry.price}</strong> on ${entry.timestamp}</li>`;
+        preview.innerHTML = `
+          <h3> Product Preview</h3>
+          <p><strong>Title:</strong> ${data[0].product_title}</p>
+          <p><strong>Data Points:</strong> ${data.length}</p>
+        `;
+
+        const labels = data.map(d => d.timestamp);
+        const prices = data.map(d => d.price);
+        const ctx = document.getElementById('priceChart').getContext('2d');
+
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Price (₹)',
+              data: prices,
+              fill: false,
+              borderColor: '#007BFF',
+              tension: 0.3,
+              pointRadius: 4
+            }]
+          },
+          options: {
+            responsive: true,
+            scales: {
+              x: { title: { display: true, text: 'Date & Time' }},
+              y: { title: { display: true, text: 'Price (₹)' }, beginAtZero: false }
+            }
+          }
         });
-        html += "</ul>";
-        resultDiv.innerHTML = html;
-      } catch (err) {
-        document.getElementById("result").innerHTML = "<p style='color:red;'>Failed to fetch data</p>";
+
+      } catch (error) {
+        preview.innerHTML = "<p style='color:red;'>Something went wrong. Check console.</p>";
+        console.error(error);
       }
     }
   </script>
